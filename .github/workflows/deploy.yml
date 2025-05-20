@@ -96,29 +96,33 @@ jobs:
           
               echo "Deploying $LAMBDA_FUNC_NAME to AWS Lambda..."
           
-              # Create deployment package
-              mkdir -p deploy/$FUNC_NAME
+              # Create deployment package in a temporary directory
+              mkdir -p deploy_temp
           
-              # Copy base files
-              cp -r ./functions/$FUNC_NAME/* ./deploy/$FUNC_NAME/
+              # Copy function files directly to the temp directory (no nesting)
+              cp -r ./functions/$FUNC_NAME/* ./deploy_temp/
           
               # Copy node_modules (using root dependencies)
-              cp -r ./node_modules ./deploy/$FUNC_NAME/
+              cp -r ./node_modules ./deploy_temp/
           
-              # Create the ZIP package
-              cd deploy
-              zip -r $FUNC_NAME.zip ./$FUNC_NAME -x "*.git*" "$FUNC_NAME/node_modules/*/test/*" "$FUNC_NAME/node_modules/*/docs/*"
+              # Create the ZIP package from the temp directory (without extra nesting)
+              cd deploy_temp
+              zip -r ../$FUNC_NAME.zip . -x "*.git*" "node_modules/*/test/*" "node_modules/*/docs/*"
+              cd ..
           
               # Deploy to Lambda
               if ! aws lambda update-function-code --function-name="$LAMBDA_FUNC_NAME" --zip-file=fileb://$FUNC_NAME.zip; then
                 echo "::error ::Failed to deploy $LAMBDA_FUNC_NAME"
                 DEPLOY_ERRORS=1
-                cd ..
+                # Clean up
+                rm -f $FUNC_NAME.zip
+                rm -rf deploy_temp
                 continue
               fi
           
               # Clean up
-              cd ..
+              rm -f $FUNC_NAME.zip
+              rm -rf deploy_temp
               echo "Successfully deployed $LAMBDA_FUNC_NAME"
             else
               echo "No changes detected for $FUNC_NAME – skipping deployment."
