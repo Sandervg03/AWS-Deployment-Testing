@@ -64,7 +64,7 @@ jobs:
             if grep -q "^functions/$FUNC_NAME/" changed_files.txt; then
               echo "Function '$FUNC_NAME' was changed."
 
-              METADATA_FILE="${func_dir%/}/metadata.json"
+              METADATA_FILE="functions/$FUNC_NAME/metadata.json"
               if [ ! -f "$METADATA_FILE" ]; then
                 echo "::error ::Missing metadata.json for changed function '$FUNC_NAME'"
                 EXIT_CODE=1
