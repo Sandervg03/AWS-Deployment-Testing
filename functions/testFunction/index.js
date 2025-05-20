@@ -5,7 +5,7 @@ function delay(ms) {
 exports.handler = async (event) => {
     await delay(500);
     return {
-        statusCode: 200,
+        statusCode: 201,
         body: "Een ander antwoord"
     }
 }
