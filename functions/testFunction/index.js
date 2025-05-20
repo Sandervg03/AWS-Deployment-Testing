@@ -4,7 +4,7 @@ function delay(ms) {
 
 exports.handler = async (event) => {
     await delay(500);
-    console.log("Test2");
+    console.log("Test");
     return {
         statusCode: 200,
         body: "This seems correct"
