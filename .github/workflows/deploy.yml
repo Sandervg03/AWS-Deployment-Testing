@@ -13,14 +13,22 @@ jobs:
         with:
           fetch-depth: 100
 
-      - name: Fetch remote default branch
+      - name: Get base commit for comparison
+        id: get-base-commit
         run: |
-          DEFAULT_BRANCH=$(git remote show origin | grep "HEAD branch" | sed 's/.*: //')
-          git fetch origin "$DEFAULT_BRANCH" --depth=100
+          # Get the SHA of the previous commit on main
+          PREVIOUS_COMMIT=$(git rev-parse HEAD^1)
+          echo "PREVIOUS_COMMIT=$PREVIOUS_COMMIT" >> $GITHUB_ENV
+          echo "Using previous commit for comparison: $PREVIOUS_COMMIT"
 
       - uses: actions/setup-node@v3
         with:
           node-version: 22
+
+      - name: Root npm install
+        run: npm ci
+        env:
+          CI: true
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v3
@@ -29,43 +37,45 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION || 'eu-north-1' }}
 
-      - name: Root npm install
-        run: npm ci
-        env:
-          CI: true
-
       - name: Get changed files
         id: changed-files
         run: |
-          DEFAULT_BRANCH=$(git remote show origin | grep "HEAD branch" | sed 's/.*: //')
-          echo "Default branch: $DEFAULT_BRANCH"
-
-          CHANGED_FILES=$(git diff --name-only origin/"$DEFAULT_BRANCH"...HEAD)
-          echo "Changed files: $CHANGED_FILES"
-          echo "CHANGED_FILES<<EOF" >> $GITHUB_ENV
-          echo "$CHANGED_FILES" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
+          # Compare current commit with previous commit
+          CHANGED_FILES=$(git diff --name-only $PREVIOUS_COMMIT HEAD)
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+          
+          # Save changed files to a file for easier processing
+          echo "$CHANGED_FILES" > changed_files.txt
 
       - name: Find and deploy modified Lambda functions
         run: |
           set -euo pipefail
-          IFS=$'\n'
+          
+          # Initialize error flag
+          DEPLOY_ERRORS=0
+          
+          # Process each function directory
           for func_dir in functions/*/; do
             FUNC_NAME=$(basename "$func_dir")
             echo "Checking function: $FUNC_NAME"
-
-            if echo "$CHANGED_FILES" | grep -q "^functions/$FUNC_NAME/" || \
-               echo "$CHANGED_FILES" | grep -q "^test/$FUNC_NAME/" || \
-               echo "$CHANGED_FILES" | grep -qE "^(package.json|package-lock.json|yarn.lock)"; then
-
+          
+            # Check if this function has changes or if package files were changed
+            if grep -q "^functions/$FUNC_NAME/" changed_files.txt || \
+               grep -q "^test/$FUNC_NAME/" changed_files.txt || \
+               grep -qE "^(package.json|package-lock.json|yarn.lock)" changed_files.txt; then
+          
               echo "Changes detected for $FUNC_NAME – preparing deployment..."
-
+          
+              # Validate metadata
               METADATA_FILE="./functions/$FUNC_NAME/metadata.json"
               if [ ! -f "$METADATA_FILE" ]; then
                 echo "::error ::Missing metadata.json for function '$FUNC_NAME'"
-                exit 1
+                DEPLOY_ERRORS=1
+                continue
               fi
-
+          
+              # Extract Lambda function name from metadata
               LAMBDA_FUNC_NAME=$(node -e "
                 try {
                   const meta = require('$METADATA_FILE');
@@ -76,20 +86,49 @@ jobs:
                   process.exit(1);
                 }
               ")
-
+          
+              # Check if Lambda function exists in AWS
               if ! aws lambda get-function --function-name "$LAMBDA_FUNC_NAME" > /dev/null 2>&1; then
                 echo "::error ::Lambda function '$LAMBDA_FUNC_NAME' does not exist in AWS, skipping deployment."
-                exit 1
+                DEPLOY_ERRORS=1
+                continue
               fi
-
+          
               echo "Deploying $LAMBDA_FUNC_NAME to AWS Lambda..."
-
-              cd "functions/$FUNC_NAME"
-              zip -r deploy.zip . -x "*.git*" "node_modules/*/test/*" "node_modules/*/docs/*"
-              aws lambda update-function-code --function-name="$LAMBDA_FUNC_NAME" --zip-file=fileb://deploy.zip
-              rm deploy.zip
-              cd "$GITHUB_WORKSPACE"
+          
+              # Create deployment package
+              mkdir -p deploy/$FUNC_NAME
+          
+              # Copy base files
+              cp -r ./functions/$FUNC_NAME/* ./deploy/$FUNC_NAME/
+          
+              # Copy node_modules (using root dependencies)
+              cp -r ./node_modules ./deploy/$FUNC_NAME/
+          
+              # Create the ZIP package
+              cd deploy
+              zip -r $FUNC_NAME.zip ./$FUNC_NAME -x "*.git*" "$FUNC_NAME/node_modules/*/test/*" "$FUNC_NAME/node_modules/*/docs/*"
+          
+              # Deploy to Lambda
+              if ! aws lambda update-function-code --function-name="$LAMBDA_FUNC_NAME" --zip-file=fileb://$FUNC_NAME.zip; then
+                echo "::error ::Failed to deploy $LAMBDA_FUNC_NAME"
+                DEPLOY_ERRORS=1
+                cd ..
+                continue
+              fi
+          
+              # Clean up
+              cd ..
+              echo "Successfully deployed $LAMBDA_FUNC_NAME"
             else
               echo "No changes detected for $FUNC_NAME – skipping deployment."
             fi
           done
+          
+          # Exit with error if any deployment failed
+          if [ $DEPLOY_ERRORS -ne 0 ]; then
+            echo "::error ::One or more Lambda functions failed to deploy."
+            exit 1
+          fi
+          
+          echo "All Lambda deployments completed successfully."

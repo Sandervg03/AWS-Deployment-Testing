@@ -48,11 +48,11 @@ jobs:
       - name: Get changed files
         id: changed-files
         run: |
-            DEFAULT_BRANCH=$(git remote show origin | grep "HEAD branch" | sed 's/.*: //')
-            CHANGED_FILES=$(git diff --name-only origin/$DEFAULT_BRANCH...HEAD)
-            echo "Changed files:"
-            echo "$CHANGED_FILES"
-            echo "$CHANGED_FILES" > changed_files.txt
+          DEFAULT_BRANCH=$(git remote show origin | grep "HEAD branch" | sed 's/.*: //')
+          CHANGED_FILES=$(git diff --name-only origin/$DEFAULT_BRANCH...HEAD)
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+          echo "$CHANGED_FILES" > changed_files.txt
 
       - name: Check if changed Lambda functions exist
         run: |
