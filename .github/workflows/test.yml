@@ -58,7 +58,7 @@ jobs:
         run: |
           EXIT_CODE=0
 
-          for func_dir in functions/*; do
+          for func_dir in functions/*/; do
             FUNC_NAME=$(basename "$func_dir")
 
             if grep -q "^functions/$FUNC_NAME/" changed_files.txt; then
