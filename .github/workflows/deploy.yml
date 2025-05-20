@@ -16,7 +16,7 @@ jobs:
       - name: Fetch remote default branch
         run: |
           DEFAULT_BRANCH=$(git remote show origin | grep "HEAD branch" | sed 's/.*: //')
-          git fetch origin $DEFAULT_BRANCH --depth=100
+          git fetch origin "$DEFAULT_BRANCH" --depth=100
 
       - uses: actions/setup-node@v3
         with:
@@ -40,7 +40,7 @@ jobs:
           DEFAULT_BRANCH=$(git remote show origin | grep "HEAD branch" | sed 's/.*: //')
           echo "Default branch: $DEFAULT_BRANCH"
 
-          CHANGED_FILES=$(git diff --name-only origin/$DEFAULT_BRANCH...HEAD)
+          CHANGED_FILES=$(git diff --name-only origin/"$DEFAULT_BRANCH"...HEAD)
           echo "Changed files: $CHANGED_FILES"
           echo "CHANGED_FILES<<EOF" >> $GITHUB_ENV
           echo "$CHANGED_FILES" >> $GITHUB_ENV
@@ -48,42 +48,47 @@ jobs:
 
       - name: Find and deploy modified Lambda functions
         run: |
+          set -euo pipefail
+          IFS=$'\n'
           for func_dir in functions/*/; do
-            FUNC_NAME=$(basename $func_dir)
+            FUNC_NAME=$(basename "$func_dir")
             echo "Checking function: $FUNC_NAME"
 
-            FUNC_CHANGED=$(echo "$CHANGED_FILES" | grep -q "^functions/$FUNC_NAME/" && echo "true" || echo "false")
-            TEST_CHANGED=$(echo "$CHANGED_FILES" | grep -q "^test/$FUNC_NAME/" && echo "true" || echo "false")
-            ROOT_CHANGED=$(echo "$CHANGED_FILES" | grep -q "^package.json\|^package-lock.json\|^yarn.lock" && echo "true" || echo "false")
+            if echo "$CHANGED_FILES" | grep -q "^functions/$FUNC_NAME/" || \
+               echo "$CHANGED_FILES" | grep -q "^test/$FUNC_NAME/" || \
+               echo "$CHANGED_FILES" | grep -qE "^(package.json|package-lock.json|yarn.lock)"; then
 
-            if [[ "$FUNC_CHANGED" == "true" || "$TEST_CHANGED" == "true" || "$ROOT_CHANGED" == "true" ]]; then
-              echo "Changes detected for $FUNC_NAME – deploying..."
+              echo "Changes detected for $FUNC_NAME – preparing deployment..."
 
-              cd functions/$FUNC_NAME
+              METADATA_FILE="./functions/$FUNC_NAME/metadata.json"
+              if [ ! -f "$METADATA_FILE" ]; then
+                echo "::error ::Missing metadata.json for function '$FUNC_NAME'"
+                exit 1
+              fi
 
               LAMBDA_FUNC_NAME=$(node -e "
                 try {
-                  const metadata = require('./metadata.json');
-                  if (!metadata.functionName) {
-                    throw new Error('Missing functionName in metadata.json');
-                  }
-                  console.log(metadata.functionName);
-                } catch (error) {
-                  console.error('Error loading metadata.json:', error.message);
+                  const meta = require('$METADATA_FILE');
+                  if (!meta.functionName) throw new Error('Missing functionName in metadata.json');
+                  console.log(meta.functionName);
+                } catch (e) {
+                  console.error('Error loading metadata.json:', e.message);
                   process.exit(1);
                 }
               ")
-              if [ -z "$LAMBDA_FUNC_NAME" ]; then
-                LAMBDA_FUNC_NAME=$FUNC_NAME
+
+              if ! aws lambda get-function --function-name "$LAMBDA_FUNC_NAME" > /dev/null 2>&1; then
+                echo "::error ::Lambda function '$LAMBDA_FUNC_NAME' does not exist in AWS, skipping deployment."
+                exit 1
               fi
 
               echo "Deploying $LAMBDA_FUNC_NAME to AWS Lambda..."
 
+              cd "functions/$FUNC_NAME"
               zip -r deploy.zip . -x "*.git*" "node_modules/*/test/*" "node_modules/*/docs/*"
-              aws lambda update-function-code --function-name=$LAMBDA_FUNC_NAME --zip-file=fileb://deploy.zip
+              aws lambda update-function-code --function-name="$LAMBDA_FUNC_NAME" --zip-file=fileb://deploy.zip
               rm deploy.zip
-
-              cd $GITHUB_WORKSPACE
+              cd "$GITHUB_WORKSPACE"
             else
               echo "No changes detected for $FUNC_NAME – skipping deployment."
             fi
