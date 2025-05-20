@@ -1,0 +1,96 @@
+name: CI - Test Lambda Functions
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 100
+
+      - name: Fetch remote default branch
+        run: |
+          DEFAULT_BRANCH=$(git remote show origin | grep "HEAD branch" | sed 's/.*: //')
+          git fetch origin $DEFAULT_BRANCH --depth=100
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 22
+
+      - name: Root npm install
+        run: npm ci
+        env:
+          CI: true
+
+      - name: Ensure no function-level package.json files exist
+        run: |
+          echo "Checking for disallowed package.json in function directories..."
+          if find functions -type f -name "package.json" | grep -q .; then
+            echo "::error ::Function-level package.json files are not allowed. Use the root package.json instead."
+            exit 1
+          fi
+
+      - name: Run tests
+        run: npm run test
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION || 'eu-north-1' }}
+
+      - name: Get changed files
+        id: changed-files
+        run: |
+            DEFAULT_BRANCH=$(git remote show origin | grep "HEAD branch" | sed 's/.*: //')
+            CHANGED_FILES=$(git diff --name-only origin/$DEFAULT_BRANCH...HEAD)
+            echo "Changed files:"
+            echo "$CHANGED_FILES"
+            echo "$CHANGED_FILES" > changed_files.txt
+
+      - name: Check if changed Lambda functions exist
+        run: |
+          EXIT_CODE=0
+
+          for func_dir in functions/*/; do
+            FUNC_NAME=$(basename "$func_dir")
+
+            if grep -q "^functions/$FUNC_NAME/" changed_files.txt; then
+              echo "Function '$FUNC_NAME' was changed."
+
+              METADATA_FILE="./functions/$FUNC_NAME/metadata.json"
+              echo "$METADATA_FILE"
+              if [ ! -f "$METADATA_FILE" ]; then
+                echo "::error ::Missing metadata.json for changed function '$FUNC_NAME'"
+                EXIT_CODE=1
+                continue
+              fi
+
+              FUNCTION_NAME=$(node -e "
+                try {
+                  const meta = require('${METADATA_FILE}');
+                  if (!meta.functionName) throw new Error('No functionName in metadata.json');
+                  console.log(meta.functionName);
+                } catch (e) {
+                  console.error('Error reading metadata.json:', e.message);
+                  process.exit(1);
+                }
+              ")
+
+              echo "Checking AWS for Lambda function: $FUNCTION_NAME"
+              if aws lambda get-function --function-name "$FUNCTION_NAME" > /dev/null 2>&1; then
+                echo "✅ $FUNCTION_NAME exists in Lambda"
+              else
+                echo "::error ::Lambda function '$FUNCTION_NAME' does not exist in AWS"
+                EXIT_CODE=1
+              fi
+            fi
+          done
+
+          exit $EXIT_CODE
