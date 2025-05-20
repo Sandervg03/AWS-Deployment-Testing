@@ -13,6 +13,11 @@ jobs:
         with:
           fetch-depth: 100
 
+      - name: Fetch remote default branch
+        run: |
+          DEFAULT_BRANCH=$(git remote show origin | grep "HEAD branch" | sed 's/.*: //')
+          git fetch origin $DEFAULT_BRANCH --depth=100
+
       - uses: actions/setup-node@v3
         with:
           node-version: 22
