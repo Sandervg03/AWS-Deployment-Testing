@@ -82,7 +82,18 @@ jobs:
 
               cd functions/$FUNC_NAME
 
-              LAMBDA_FUNC_NAME=$(node -e "console.log(require('./metadata.json').functionName)")
+              LAMBDA_FUNC_NAME=$(node -e "
+                try {
+                  const metadata = require('./metadata.json');
+                  if (!metadata.functionName) {
+                    throw new Error('Missing functionName in metadata.json');
+                  }
+                  console.log(metadata.functionName);
+                } catch (error) {
+                  console.error('Error loading metadata.json:', error.message);
+                  process.exit(1);
+                }
+              ")
               if [ -z "$LAMBDA_FUNC_NAME" ]; then
                 LAMBDA_FUNC_NAME=$FUNC_NAME
               fi
