@@ -82,7 +82,7 @@ jobs:
 
               cd functions/$FUNC_NAME
 
-              LAMBDA_FUNC_NAME=$(node -e "try { const pkg = require('./package.json'); console.log(pkg.lambda?.functionName || ''); } catch(e) { console.log(''); }")
+              LAMBDA_FUNC_NAME=$(node -e "console.log(require('./metadata.json').functionName)")
               if [ -z "$LAMBDA_FUNC_NAME" ]; then
                 LAMBDA_FUNC_NAME=$FUNC_NAME
               fi
