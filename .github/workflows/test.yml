@@ -65,7 +65,7 @@ jobs:
               echo "Function '$FUNC_NAME' was changed."
 
               METADATA_FILE="functions/$FUNC_NAME/metadata.json"
-              console.log(METADATA_FILE)
+              echo "$METADATA_FILE"
               if [ ! -f "$METADATA_FILE" ]; then
                 echo "::error ::Missing metadata.json for changed function '$FUNC_NAME'"
                 EXIT_CODE=1
