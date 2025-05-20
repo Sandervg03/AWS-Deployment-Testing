@@ -7,6 +7,6 @@ exports.handler = async (event) => {
     console.log("Test");
     return {
         statusCode: 200,
-        body: "Final check?"
+        body: "Sebastiaan is fucking cool"
     }
 }
