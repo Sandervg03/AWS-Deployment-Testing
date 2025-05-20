@@ -6,7 +6,7 @@ exports.handler = async (event) => {
     await delay(100);
     console.log("Test");
     return {
-        statusCode: 200,
+        statusCode: 201,
         body: "Final check?"
     }
 }
