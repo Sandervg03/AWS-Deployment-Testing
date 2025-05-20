@@ -22,7 +22,7 @@ jobs:
           fi
 
   tests:
-    needs: confirmNoFunctionSpecificPackageJson
+    needs: confirmNoFunctionSpecificPackageJsonExists
     runs-on: ubuntu-latest
     steps:
       - uses: actions/setup-node@v3
@@ -38,7 +38,7 @@ jobs:
         run: npm run test
 
   confirmFunctionExistsInAwsLambda:
-    needs: test
+    needs: tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
