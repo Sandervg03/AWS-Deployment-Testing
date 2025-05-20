@@ -6,6 +6,6 @@ exports.handler = async (event) => {
     await delay(500);
     return {
         statusCode: 200,
-        body: "Dit is testFunction"
+        body: "Een ander antwoord"
     }
 }
