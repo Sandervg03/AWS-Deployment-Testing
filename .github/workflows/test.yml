@@ -6,7 +6,39 @@ on:
       - main
 
 jobs:
-  test:
+  confirmNoFunctionSpecificPackageJsonExists:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 22
+
+      - name: Ensure no function-level package.json files exist
+        run: |
+          echo "Checking for disallowed package.json in function directories..."
+          if find functions -type f -name "package.json" | grep -q .; then
+            echo "::error ::Function-level package.json files are not allowed. Use the root package.json instead."
+            exit 1
+          fi
+
+  tests:
+    needs: confirmNoFunctionSpecificPackageJson
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 22
+
+      - name: Root npm install
+        run: npm ci
+        env:
+          CI: true
+
+      - name: Run tests
+        run: npm run test
+
+  confirmFunctionExistsInAwsLambda:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -27,17 +59,6 @@ jobs:
         env:
           CI: true
 
-      - name: Ensure no function-level package.json files exist
-        run: |
-          echo "Checking for disallowed package.json in function directories..."
-          if find functions -type f -name "package.json" | grep -q .; then
-            echo "::error ::Function-level package.json files are not allowed. Use the root package.json instead."
-            exit 1
-          fi
-
-      - name: Run tests
-        run: npm run test
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v3
         with:
@@ -48,11 +69,11 @@ jobs:
       - name: Get changed files
         id: changed-files
         run: |
-            DEFAULT_BRANCH=$(git remote show origin | grep "HEAD branch" | sed 's/.*: //')
-            CHANGED_FILES=$(git diff --name-only origin/$DEFAULT_BRANCH...HEAD)
-            echo "Changed files:"
-            echo "$CHANGED_FILES"
-            echo "$CHANGED_FILES" > changed_files.txt
+          DEFAULT_BRANCH=$(git remote show origin | grep "HEAD branch" | sed 's/.*: //')
+          CHANGED_FILES=$(git diff --name-only origin/$DEFAULT_BRANCH...HEAD)
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+          echo "$CHANGED_FILES" > changed_files.txt
 
       - name: Check if changed Lambda functions exist
         run: |
