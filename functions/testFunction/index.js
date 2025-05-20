@@ -3,10 +3,10 @@ function delay(ms) {
 }
 
 exports.handler = async (event) => {
-    await delay(500);
+    await delay(100);
     console.log("Test");
     return {
         statusCode: 200,
-        body: "This seems correct"
+        body: "Final check?"
     }
 }
