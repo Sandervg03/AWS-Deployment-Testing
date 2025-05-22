@@ -30,7 +30,7 @@ jobs:
       - name: Detect changed files
         id: changed-files
         run: |
-          CHANGED_FILES=$(git diff --name-only origin/$DEFAULT_BRANCH...HEAD)
+          CHANGED_FILES=$(git diff --name-status origin/$DEFAULT_BRANCH...HEAD)
           echo "Changed files:"
           echo "$CHANGED_FILES"
           echo "all_changed_files<<EOF" >> $GITHUB_OUTPUT
@@ -107,7 +107,7 @@ jobs:
             FUNC_NAME=$(basename "$func_dir")
 
             # Check if this function was modified in this PR
-            if grep -q "^functions/$FUNC_NAME/" changed_files.txt; then
+            if grep -qE "^[^D]\s+functions/$FUNC_NAME/" changed_files.txt; then
               echo "Function '$FUNC_NAME' was changed."
 
               # Verify function has required metadata file
