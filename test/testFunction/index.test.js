@@ -1,4 +1,4 @@
-const {handler} = require("../../functions/testFunction");
+import {handler} from "../../functions/testFunction";
 
 describe("testFunctionTest", () => {
     it("should return 200 statusCode", async () => {
