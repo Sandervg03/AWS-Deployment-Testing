@@ -17,7 +17,7 @@ export class Controller {
             // if (!await this.authManager.userIsAuthorized(event.headers.Authorization)) {
             //     throw new UnauthorizedException("You are not authorized to perform this action.")
             // }
-            const id = event.queryStringParameters.id;
+            const id = event.queryStringParameters?.id;
             if (!id) {
                 throw new BadRequestException("No id provided.");
             }
