@@ -56,80 +56,91 @@ jobs:
       # Find and deploy all modified Lambda functions
       - name: Find and deploy modified Lambda functions
         run: |
-          set -euo pipefail
+          set -euo pipefail  # Fail on errors and undefined variables
           
+          # Initialize error flag to track deployment failures
           DEPLOY_ERRORS=0
           
-          # Get changed function directories excluding test folder changes
-          # Only consider changes inside functions/<func_name>/ excluding tests
-          CHANGED_FUNCTIONS=$(grep -E "^functions/[^/]+/" changed_files.txt | grep -v "^test/" | cut -d/ -f2 | sort -u)
+          # Process each function directory
+          for func_dir in functions/*/; do
+            FUNC_NAME=$(basename "$func_dir")
+            echo "Checking function: $FUNC_NAME"
           
-          for FUNC_NAME in $CHANGED_FUNCTIONS; do
-          FUNC_DIR="./functions/$FUNC_NAME"
-        
-          # Skip if function directory was deleted
-          if [ ! -d "$FUNC_DIR" ]; then
-          echo "Function directory $FUNC_DIR was deleted – skipping deployment."
-          continue
-          fi
-        
-          echo "Checking function: $FUNC_NAME"
+            # Check if this function has changes or if package files were changed
+            if grep -q "^functions/$FUNC_NAME/" changed_files.txt || \
+               grep -q "^test/$FUNC_NAME/" changed_files.txt || \
+               grep -qE "^(package.json|package-lock.json|yarn.lock)" changed_files.txt; then
           
-          # Skip if changes only in test folder inside this function (extra safety)
-          # We already exclude test/ changes globally above, so this is optional
+              echo "Changes detected for $FUNC_NAME – preparing deployment..."
           
-          # Check if metadata.json exists
-          METADATA_FILE="$FUNC_DIR/metadata.json"
-          if [ ! -f "$METADATA_FILE" ]; then
-          echo "::error ::Missing metadata.json for function '$FUNC_NAME'"
-          DEPLOY_ERRORS=1
-          continue
-          fi
-        
-          # Extract Lambda function name
-          LAMBDA_FUNC_NAME=$(node -e "
-          try {
-          const meta = require('$METADATA_FILE');
-          if (!meta.functionName) throw new Error('Missing functionName in metadata.json');
-          console.log(meta.functionName);
-          } catch (e) {
-          console.error('Error loading metadata.json:', e.message);
-          process.exit(1);
-          }
-          ")
-        
-          # Check if Lambda function exists on AWS
-          if ! aws lambda get-function --function-name "$LAMBDA_FUNC_NAME" > /dev/null 2>&1; then
-          echo "::error ::Lambda function '$LAMBDA_FUNC_NAME' does not exist in AWS, skipping deployment."
-          DEPLOY_ERRORS=1
-          continue
-          fi
-        
-          echo "Deploying $LAMBDA_FUNC_NAME to AWS Lambda..."
-        
-          # Prepare deployment package
-          mkdir -p deploy_temp
-          cp -r "$FUNC_DIR"/* ./deploy_temp/
-          cp -r ./node_modules ./deploy_temp/
-        
-          cd deploy_temp
-          zip -r ../$FUNC_NAME.zip . -x "*.git*" "node_modules/*/test/*" "node_modules/*/docs/*"
-          cd ..
-        
-          if ! aws lambda update-function-code --function-name="$LAMBDA_FUNC_NAME" --zip-file=fileb://$FUNC_NAME.zip; then
-          echo "::error ::Failed to deploy $LAMBDA_FUNC_NAME"
-          DEPLOY_ERRORS=1
-          else
-          echo "Successfully deployed $LAMBDA_FUNC_NAME"
-          fi
-        
-          rm -f $FUNC_NAME.zip
-          rm -rf deploy_temp
+              # Validate function has required metadata file
+              METADATA_FILE="./functions/$FUNC_NAME/metadata.json"
+              if [ ! -f "$METADATA_FILE" ]; then
+                echo "::error ::Missing metadata.json for function '$FUNC_NAME'"
+                DEPLOY_ERRORS=1
+                continue
+              fi
+          
+              # Extract Lambda function name from metadata
+              LAMBDA_FUNC_NAME=$(node -e "
+                try {
+                  const meta = require('$METADATA_FILE');
+                  if (!meta.functionName) throw new Error('Missing functionName in metadata.json');
+                  console.log(meta.functionName);
+                } catch (e) {
+                  console.error('Error loading metadata.json:', e.message);
+                  process.exit(1);
+                }
+              ")
+          
+              # Verify function exists in AWS Lambda before attempting to deploy
+              if ! aws lambda get-function --function-name "$LAMBDA_FUNC_NAME" > /dev/null 2>&1; then
+                echo "::error ::Lambda function '$LAMBDA_FUNC_NAME' does not exist in AWS, skipping deployment."
+                DEPLOY_ERRORS=1
+                continue
+              fi
+          
+              echo "Deploying $LAMBDA_FUNC_NAME to AWS Lambda..."
+          
+              # Create deployment package in a temporary directory
+              mkdir -p deploy_temp
+          
+              # Copy function files directly to the temp directory (no nesting)
+              # This ensures files are at the root level in the Lambda deployment
+              cp -r ./functions/$FUNC_NAME/* ./deploy_temp/
+          
+              # Copy node_modules (using root dependencies)
+              cp -r ./node_modules ./deploy_temp/
+          
+              # Create the ZIP package from the temp directory (without extra nesting)
+              cd deploy_temp
+              zip -r ../$FUNC_NAME.zip . -x "*.git*" "node_modules/*/test/*" "node_modules/*/docs/*"
+              cd ..
+          
+              # Deploy to Lambda and track any failures
+              if ! aws lambda update-function-code --function-name="$LAMBDA_FUNC_NAME" --zip-file=fileb://$FUNC_NAME.zip; then
+                echo "::error ::Failed to deploy $LAMBDA_FUNC_NAME"
+                DEPLOY_ERRORS=1
+                # Clean up temporary files
+                rm -f $FUNC_NAME.zip
+                rm -rf deploy_temp
+                continue
+              fi
+          
+              # Clean up temporary files after successful deployment
+              rm -f $FUNC_NAME.zip
+              rm -rf deploy_temp
+              echo "Successfully deployed $LAMBDA_FUNC_NAME"
+            else
+              echo "No changes detected for $FUNC_NAME – skipping deployment."
+            fi
           done
           
+          # Exit with error code if any deployment failed
+          # This ensures CI pipeline shows failure when deployments don't succeed
           if [ $DEPLOY_ERRORS -ne 0 ]; then
-          echo "::error ::One or more Lambda functions failed to deploy."
-          exit 1
+            echo "::error ::One or more Lambda functions failed to deploy."
+            exit 1
           fi
           
           echo "All Lambda deployments completed successfully."
