@@ -153,7 +153,7 @@ class LambdaFactory {
         }));
 
         console.log("\n\x1b[32m%s\x1b[0m", `API Gateway ${name} was created successfully.`);
-        console.log("\n\x1b[33m", `Test it out at: https://${api}.execute-api.eu-north-1.amazonaws.com/default/`);
+        console.log("\n\x1b[33m", `Test it out at: https://${api}.execute-api.eu-north-1.amazonaws.com/default`);
         console.log("\n\x1b[33m", "**Note** The above link will return an error as you are not providing an auth token and id.");
     }
 
