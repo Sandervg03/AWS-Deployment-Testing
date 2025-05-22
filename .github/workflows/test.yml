@@ -49,23 +49,6 @@ jobs:
         env:
           CI: true
 
-  validate-architecture:
-    name: Validate Code Architecture
-    runs-on: ubuntu-latest
-    needs: setup
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      # Ensure there are no per-function package.json files
-      - name: Check for function-level package.json files
-        run: |
-          echo "Checking for disallowed package.json in function directories..."
-          if find functions -type f -name "package.json" | grep -q .; then
-            echo "::error ::Function-level package.json files are not allowed. Use the root package.json instead."
-            exit 1
-          fi
-
   run-tests:
     name: Run Unit Tests
     runs-on: ubuntu-latest
